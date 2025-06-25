@@ -14,6 +14,7 @@ export interface ConfigurableOptions extends Partial<DefaultOptions> {
   customClass?: string;
   customThemeClass?: string;
   preventCloseOnClick?: boolean; // default will be false - global value for all menu items
+  onOpen?: (event: MouseEvent) => void; // callback when menu opens
 }
 
 export interface Options extends ConfigurableOptions, CoreOptions {}
@@ -27,6 +28,7 @@ export interface BaseMenuOption {
   iconClass?: string;
   iconHTML?: string;
   preventCloseOnClick?: boolean; // default will be false - individual value for each item (it will override the global value if any)
+  itemClass?: string; // custom class for the entire menu item
 }
 
 export interface MenuOption extends BaseMenuOption {
