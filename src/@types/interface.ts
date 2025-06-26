@@ -19,6 +19,12 @@ export interface ConfigurableOptions extends Partial<DefaultOptions> {
 
 export interface Options extends ConfigurableOptions, CoreOptions {}
 
+export interface GridConfig {
+  rows: number;
+  columns: number;
+  callback: (row: number, column: number) => void;
+}
+
 export interface BaseMenuOption {
   label: string;
   callback?: (ev: MouseEvent) => unknown;
@@ -27,12 +33,14 @@ export interface BaseMenuOption {
    */
   iconClass?: string;
   iconHTML?: string;
+  contentHTML?: string; // Allow HTML content in menu items
   preventCloseOnClick?: boolean; // default will be false - individual value for each item (it will override the global value if any)
   itemClass?: string; // custom class for the entire menu item
 }
 
 export interface MenuOption extends BaseMenuOption {
   nestedMenu?: NestedMenuItem[];
+  nestedGrid?: GridConfig; // NEW: Grid selector feature
 }
 
 export type MenuItem = MenuOption | 'hr';

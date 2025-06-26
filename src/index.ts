@@ -4,6 +4,7 @@ import { sanitize } from 'dompurify';
 // Base & Template * Style
 import style from './index.scss';
 import template from './index.pug';
+import gridTemplate from './grid.pug';
 
 // Utils
 import { normalizePozition } from './util.functions';
@@ -16,6 +17,7 @@ import {
   ConfigurableOptions,
   Options,
   MenuOption,
+  GridConfig,
 } from './@types/interface';
 
 interface State {
@@ -23,68 +25,66 @@ interface State {
   menuItems: MenuItem[];
 }
 
+interface GridState {
+  style: Partial<CSSStyleDeclaration>;
+  gridConfig: GridConfig;
+  gridId: string;
+}
+
 class BaseContextMenu {
-  // private vars
-
-  #state: State = { style, menuItems: [] }; // state for pug template
-
-  #coreOptions: CoreOptions = {
-    transformOrigin: ['top', 'left'], // show not be
-  };
-
+  #state: State = { style, menuItems: [] };
+  #coreOptions: CoreOptions = { transformOrigin: ['top', 'left'] };
   #defaultOptions: DefaultOptions = {
     theme: 'black',
     transitionDuration: 200,
     normalizePosition: true,
   };
 
-  // public properties
-
   //@ts-ignore
-  options: Options = {}; // will be populated in constructor
-
+  options: Options = {};
   initialContextMenuEvent: MouseEvent | undefined;
 
-  // private methods
-  /**
-   * Sanitize the HTML content for menu icons
-   * @param menuItems
-   */
   #sanitizeMenuIcons = (menuItems: MenuItem[]): MenuItem[] =>
     menuItems.map((item) => {
       typeof item === 'object' &&
         item.hasOwnProperty('iconHTML') &&
-        // TODO replace DOMPurify with Sanitize API when it will be supported https://developer.mozilla.org/en-US/docs/Web/API/HTML_Sanitizer_API
         (item.iconHTML = sanitize(item.iconHTML));
-
       return item;
     });
 
-  /**
-   * If a menu option has a nested menu, then bind the click event handler that will open the menu
-   */
   #bindNestedMenuListener(menuItems: MenuItem[]): MenuItem[] {
     menuItems
       .filter(
-        (item) => typeof item === 'object' && item.hasOwnProperty('nestedMenu')
+        (item) =>
+          typeof item === 'object' &&
+          (item.hasOwnProperty('nestedMenu') ||
+            item.hasOwnProperty('nestedGrid'))
       )
       .map((item: MenuOption) => {
         const providedCallback = item.callback;
-
         item.callback = (ev: MouseEvent) => {
           providedCallback && providedCallback(ev);
-          new NestedContextMenu(
-            {
-              ...this.options,
-              menuItems: item.nestedMenu,
-            },
-            ev,
-            //@ts-ignore
-            document.getElementById(`context-menu-item-${item._id}`)
-          );
+
+          if (item.nestedGrid) {
+            new NestedGridContextMenu(
+              { ...this.options, menuItems: [] },
+              ev,
+              //@ts-ignore
+              document.getElementById(`context-menu-item-${item._id}`),
+              item.nestedGrid,
+              //@ts-ignore
+              item._id
+            );
+          } else if (item.nestedMenu) {
+            new NestedContextMenu(
+              { ...this.options, menuItems: item.nestedMenu },
+              ev,
+              //@ts-ignore
+              document.getElementById(`context-menu-item-${item._id}`)
+            );
+          }
         };
       });
-
     return menuItems;
   }
 
@@ -103,20 +103,15 @@ class BaseContextMenu {
     outOfBoundsOnX: boolean,
     outOfBoundsOnY: boolean
   ): void => {
-    // transition duration
     contextMenu.style.transitionDuration = `${this.options.transitionDuration}ms`;
 
-    // set the transition origin based on it's position
     const transformOrigin: [string, string] = Array.from(
       this.options.transformOrigin
     ) as [string, string];
-
     outOfBoundsOnX && (transformOrigin[1] = 'right');
     outOfBoundsOnY && (transformOrigin[0] = 'bottom');
-
     contextMenu.style.transformOrigin = transformOrigin.join(' ');
 
-    // apply theme or custom css style
     if (this.options.customThemeClass) {
       contextMenu.classList.add(this.options.customThemeClass);
     } else {
@@ -129,58 +124,159 @@ class BaseContextMenu {
       contextMenu.classList.add(this.options.customClass);
   };
 
-  /**
-   * Interpolate the state variables inside the pug element and create an HTML Element
-   */
   buildContextMenu = (): HTMLElement => {
     const wrapper: HTMLElement = document.createElement('div');
     wrapper.innerHTML = template(this.#state);
+    return wrapper.children[0] as HTMLElement;
+  };
 
-    const contextMenu: HTMLElement = wrapper.children[0] as HTMLElement;
-
-    return contextMenu;
+  buildGridContextMenu = (
+    gridConfig: GridConfig,
+    gridId: string
+  ): HTMLElement => {
+    const gridState: GridState = { style, gridConfig, gridId };
+    const wrapper: HTMLElement = document.createElement('div');
+    wrapper.innerHTML = gridTemplate(gridState);
+    return wrapper.children[0] as HTMLElement;
   };
 
   updateOptions(configurableOptions: Partial<ConfigurableOptions>): void {
     const sanitizedMenuItems = this.#sanitizeMenuIcons(
       configurableOptions.menuItems
     );
-
     const menuItems = this.#bindNestedMenuListener(sanitizedMenuItems);
     this.#addIdToMenuItems(menuItems);
 
-    // extend default options and bind the menu items inside the state for pug template
     Object.assign(this.options, this.#defaultOptions);
-    Object.assign(this.options, {
-      ...configurableOptions,
-      menuItems,
-    });
+    Object.assign(this.options, { ...configurableOptions, menuItems });
     Object.assign(this.options, this.#coreOptions);
 
     this.#state.menuItems = this.options.menuItems;
   }
 
-  getNormalizedPosition = (mouseX: number, mouseY: number, contextMenu: HTMLElement): { normalizedX: number; normalizedY: number } => {
+  getNormalizedPosition = (
+    mouseX: number,
+    mouseY: number,
+    contextMenu: HTMLElement
+  ): { normalizedX: number; normalizedY: number } => {
     let normalizedX = mouseX;
     let normalizedY = mouseY;
 
-    // Check if normalization is required
     if (this.options.normalizePosition) {
       const normalizedPosition = normalizePozition(
         { x: mouseX, y: mouseY },
         contextMenu,
         this.options.scope
       );
-      normalizedX = normalizedPosition.normalizedX;
-      normalizedY = normalizedPosition.normalizedY;
+      ({ normalizedX, normalizedY } = normalizedPosition);
     }
 
     return { normalizedX, normalizedY };
+  };
+}
+
+class NestedGridContextMenu extends BaseContextMenu {
+  gridConfig: GridConfig;
+  gridId: string;
+
+  #removeExistingNestedContextMenu = (): void => {
+    document
+      .querySelector(`.${style['context-menu']}.nested-context-menu`)
+      ?.remove();
+  };
+
+  #bindGridInteractions = (contextMenu: HTMLElement): void => {
+    const cells = contextMenu.querySelectorAll(
+      `.${style['grid-cell']}`
+    ) as NodeListOf<HTMLElement>;
+    const selectionInfo = contextMenu.querySelector(
+      `.${style['selection-info']}`
+    ) as HTMLElement;
+
+    cells.forEach((cell) => {
+      cell.addEventListener('mouseenter', (e) => {
+        const target = e.target as HTMLElement;
+        const row = parseInt(target.dataset.row || '1');
+        const col = parseInt(target.dataset.col || '1');
+
+        cells.forEach((c) => c.classList.remove(style['selected']));
+        cells.forEach((c) => {
+          const cellRow = parseInt(c.dataset.row || '1');
+          const cellCol = parseInt(c.dataset.col || '1');
+          if (cellRow <= row && cellCol <= col) {
+            c.classList.add(style['selected']);
+          }
+        });
+
+        // selectionInfo.textContent = `${row} × ${col}`;
+      });
+
+      cell.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const row = parseInt(target.dataset.row || '1');
+        const col = parseInt(target.dataset.col || '1');
+
+        this.gridConfig.callback(row, col);
+        this.#removeExistingNestedContextMenu();
+        document.querySelector(`.${style['context-menu']}`)?.remove();
+      });
+    });
+
+    contextMenu.addEventListener('mouseleave', () => {
+      cells.forEach((c) => c.classList.remove(style['selected']));
+      // selectionInfo.textContent = 'Hover to select';
+    });
+  };
+
+  #showContextMenu(event: MouseEvent, parentEl: HTMLElement) {
+    this.initialContextMenuEvent = event;
+    this.#removeExistingNestedContextMenu();
+
+    const contextMenu: HTMLElement = this.buildGridContextMenu(
+      this.gridConfig,
+      this.gridId
+    );
+    contextMenu.classList.add('nested-context-menu');
+    const body = document.querySelector('body');
+    if (body) {
+      body.append(contextMenu);
+    }
+
+    this.applyStyleOnContextMenu(contextMenu, false, false);
+
+    const { x: parentX, y: parentY } = parentEl.getBoundingClientRect();
+    const { normalizedX, normalizedY } = this.getNormalizedPosition(
+      parentX,
+      parentY,
+      contextMenu
+    );
+    const adjustedX = normalizedX + parentEl.clientWidth;
+
+    contextMenu.style.top = `${normalizedY}px`;
+    contextMenu.style.left = `${adjustedX}px`;
+    contextMenu.oncontextmenu = (e) => e.preventDefault();
+
+    this.#bindGridInteractions(contextMenu);
+    setTimeout(() => contextMenu.classList.add(style['visible']));
+  }
+
+  // eslint-disable-next-line max-params
+  constructor(
+    configurableOptions: ConfigurableOptions,
+    event: MouseEvent,
+    parentEl: HTMLElement,
+    gridConfig: GridConfig,
+    gridId: string
+  ) {
+    super();
+    this.gridConfig = gridConfig;
+    this.gridId = gridId;
+    this.updateOptions(configurableOptions);
+    this.#showContextMenu(event, parentEl);
   }
 }
 
 class NestedContextMenu extends BaseContextMenu {
-  // private methods
   #removeExistingNestedContextMenu = (): void => {
     document
       .querySelector(`.${style['context-menu']}.nested-context-menu`)
@@ -189,21 +285,18 @@ class NestedContextMenu extends BaseContextMenu {
 
   #bindCallbacks = (contextMenu: HTMLElement): void => {
     this.options.menuItems.forEach((menuItem: MenuItem, index: number) => {
-      if (menuItem === 'hr' || !menuItem.callback) {
-        return;
-      }
+      if (menuItem === 'hr' || !menuItem.callback) return;
 
       const htmlEl: HTMLElement = contextMenu.children[index] as HTMLElement;
-
       htmlEl.onclick = () => {
-        menuItem.callback(this.initialContextMenuEvent);
+        if (menuItem.callback && this.initialContextMenuEvent) {
+          menuItem.callback(this.initialContextMenuEvent);
+        }
 
-        // global value for all menu items, or the individual option or false
         const preventCloseOnClick: boolean =
           menuItem.preventCloseOnClick ??
           this.options.preventCloseOnClick ??
           false;
-
         if (!preventCloseOnClick) {
           this.#removeExistingNestedContextMenu();
           document.querySelector(`.${style['context-menu']}`)?.remove();
@@ -213,42 +306,32 @@ class NestedContextMenu extends BaseContextMenu {
   };
 
   #showContextMenu(event: MouseEvent, parentEl: HTMLElement) {
-    // store event so it can be passed to callbakcs
     this.initialContextMenuEvent = event;
-
-    // the current context menu should disappear when a new one is displayed
     this.#removeExistingNestedContextMenu();
 
-    // build and show on ui
     const contextMenu: HTMLElement = this.buildContextMenu();
     contextMenu.classList.add('nested-context-menu');
+    const body = document.querySelector('body');
+    if (body) {
+      body.append(contextMenu);
+    }
 
-    document.querySelector('body').append(contextMenu);
-
-    // apply the css configurable style
     this.applyStyleOnContextMenu(contextMenu, false, false);
 
-    // set the position
     const { x: parentX, y: parentY } = parentEl.getBoundingClientRect();
-
-    // eslint-disable-next-line prefer-const
-    let { normalizedX, normalizedY } = this.getNormalizedPosition(parentX, parentY, contextMenu);
-
-    normalizedX = normalizedX + contextMenu.clientWidth;
+    const { normalizedX, normalizedY } = this.getNormalizedPosition(
+      parentX,
+      parentY,
+      contextMenu
+    );
+    const adjustedX = normalizedX + contextMenu.clientWidth;
 
     contextMenu.style.top = `${normalizedY}px`;
-    contextMenu.style.left = `${normalizedX}px`;
-
-    // disable context menu for it
+    contextMenu.style.left = `${adjustedX}px`;
     contextMenu.oncontextmenu = (e) => e.preventDefault();
 
-    // bind the callbacks on each option
     this.#bindCallbacks(contextMenu);
-
-    // make it visible but wait an event loop to pass
-    setTimeout(() => {
-      contextMenu.classList.add(style['visible']);
-    });
+    setTimeout(() => contextMenu.classList.add(style['visible']));
   }
 
   constructor(
@@ -257,9 +340,7 @@ class NestedContextMenu extends BaseContextMenu {
     parentEl: HTMLElement
   ) {
     super();
-
     this.updateOptions(configurableOptions);
-
     this.#showContextMenu(event, parentEl);
   }
 }
@@ -278,21 +359,18 @@ export default class VanillaContextMenu extends BaseContextMenu {
 
   #bindCallbacks = (contextMenu: HTMLElement): void => {
     this.options.menuItems.forEach((menuItem: MenuItem, index: number) => {
-      if (menuItem === 'hr' || !menuItem.callback) {
-        return;
-      }
+      if (menuItem === 'hr' || !menuItem.callback) return;
 
       const htmlEl: HTMLElement = contextMenu.children[index] as HTMLElement;
-
       htmlEl.onclick = () => {
-        menuItem.callback(this.initialContextMenuEvent);
+        if (menuItem.callback && this.initialContextMenuEvent) {
+          menuItem.callback(this.initialContextMenuEvent);
+        }
 
-        // global value for all menu items, or the individual option or false
         const preventCloseOnClick: boolean =
           menuItem.preventCloseOnClick ??
           this.options.preventCloseOnClick ??
           false;
-
         if (!preventCloseOnClick) {
           this.#removeExistingContextMenu();
         }
@@ -304,83 +382,54 @@ export default class VanillaContextMenu extends BaseContextMenu {
     event.preventDefault();
     event.stopPropagation();
 
-    // store event so it can be passed to callbakcs
     this.initialContextMenuEvent = event;
-
-    // the current context menu should disappear when a new one is displayed
     this.#removeExistingContextMenu();
 
-    // build and show on ui
     const contextMenu: HTMLElement = this.buildContextMenu();
-    document.querySelector('body').append(contextMenu);
+    const body = document.querySelector('body');
+    if (body) {
+      body.append(contextMenu);
+    }
 
-
-    // set the position
     const { clientX: mouseX, clientY: mouseY } = event;
-
-    const { normalizedX, normalizedY } = this.getNormalizedPosition(mouseX, mouseY, contextMenu);
+    const { normalizedX, normalizedY } = this.getNormalizedPosition(
+      mouseX,
+      mouseY,
+      contextMenu
+    );
 
     contextMenu.style.top = `${normalizedY}px`;
     contextMenu.style.left = `${normalizedX}px`;
 
-    // apply the css configurable style
     this.applyStyleOnContextMenu(
       contextMenu,
       mouseX !== normalizedX,
       mouseY !== normalizedY
     );
-
-    // disable context menu for it
     contextMenu.oncontextmenu = (e) => e.preventDefault();
 
-    // bind the callbacks on each option
     this.#bindCallbacks(contextMenu);
-
-    // make it visible but wait an event loop to pass
-    setTimeout(() => {
-      contextMenu.classList.add(style['visible']);
-    });
+    setTimeout(() => contextMenu.classList.add(style['visible']));
   };
 
-  /**
-   * Used to determine if the user has clicked outside of the context menu and if so to close it
-   * @param event
-   */
   #onDocumentClick = (event: MouseEvent): void => {
     const clickedTarget: HTMLElement = event.target as HTMLElement;
-
-    if (clickedTarget.closest(`.${style['context-menu']}`)) {
-      return;
-    }
+    if (clickedTarget.closest(`.${style['context-menu']}`)) return;
     this.#removeExistingContextMenu();
   };
 
-
   constructor(configurableOptions: ConfigurableOptions) {
     super();
-
     this.updateOptions(configurableOptions);
-
-    // bind the required event listeners
     this.options.scope.oncontextmenu = this.#onShowContextMenu;
-
-    // add a click event listener to create a modal effect for the context menu and close it if the user clicks outside of it
     document.addEventListener('click', this.#onDocumentClick);
   }
 
-  // Public methods (API)
-
-  /**
-   * Remove all the event listeners that were registered for this feature
-   */
   off(): void {
     document.removeEventListener('click', this.#onDocumentClick);
     this.options.scope.oncontextmenu = null;
   }
 
-  /**
-   * Close the context menu
-   */
   close(): void {
     this.#removeExistingContextMenu();
   }
