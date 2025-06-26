@@ -181,7 +181,7 @@ class NestedGridContextMenu extends BaseContextMenu {
 
   #removeExistingNestedContextMenu = (): void => {
     document
-      .querySelector(`.${style['context-menu']}.nested-context-menu`)
+      .querySelector(`.${style['context-menu']}.nested-grid-menu`)
       ?.remove();
   };
 
