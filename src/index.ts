@@ -244,15 +244,35 @@ class NestedGridContextMenu extends BaseContextMenu {
 
     this.applyStyleOnContextMenu(contextMenu, false, false);
 
-    const { x: parentX, y: parentY } = parentEl.getBoundingClientRect();
-    const { normalizedX, normalizedY } = this.getNormalizedPosition(
+    const {
+      x: parentX,
+      y: parentY,
+      width: parentWidth,
+    } = parentEl.getBoundingClientRect();
+
+    // Check if positioning to the right would go out of bounds
+    const wouldOverflowRight =
+      parentX + parentWidth + contextMenu.clientWidth > window.innerWidth;
+
+    let adjustedX: number;
+
+    if (wouldOverflowRight) {
+      // Position to the left of the parent element
+      adjustedX = parentX - contextMenu.clientWidth;
+    } else {
+      // Position to the right of the parent element (default)
+      adjustedX = parentX + parentWidth;
+    }
+
+    // Use normalized position for Y coordinate to handle vertical overflow
+    const { normalizedY } = this.getNormalizedPosition(
       parentX,
       parentY,
       contextMenu
     );
-    const adjustedX = normalizedX + parentEl.clientWidth;
+    const adjustedY = normalizedY;
 
-    contextMenu.style.top = `${normalizedY}px`;
+    contextMenu.style.top = `${adjustedY}px`;
     contextMenu.style.left = `${adjustedX}px`;
     contextMenu.oncontextmenu = (e) => e.preventDefault();
 
@@ -318,15 +338,35 @@ class NestedContextMenu extends BaseContextMenu {
 
     this.applyStyleOnContextMenu(contextMenu, false, false);
 
-    const { x: parentX, y: parentY } = parentEl.getBoundingClientRect();
-    const { normalizedX, normalizedY } = this.getNormalizedPosition(
+    const {
+      x: parentX,
+      y: parentY,
+      width: parentWidth,
+    } = parentEl.getBoundingClientRect();
+
+    // Check if positioning to the right would go out of bounds
+    const wouldOverflowRight =
+      parentX + parentWidth + contextMenu.clientWidth > window.innerWidth;
+
+    let adjustedX: number;
+
+    if (wouldOverflowRight) {
+      // Position to the left of the parent element
+      adjustedX = parentX - contextMenu.clientWidth;
+    } else {
+      // Position to the right of the parent element (default)
+      adjustedX = parentX + parentWidth;
+    }
+
+    // Use normalized position for Y coordinate to handle vertical overflow
+    const { normalizedY } = this.getNormalizedPosition(
       parentX,
       parentY,
       contextMenu
     );
-    const adjustedX = normalizedX + contextMenu.clientWidth;
+    const adjustedY = normalizedY;
 
-    contextMenu.style.top = `${normalizedY}px`;
+    contextMenu.style.top = `${adjustedY}px`;
     contextMenu.style.left = `${adjustedX}px`;
     contextMenu.oncontextmenu = (e) => e.preventDefault();
 
