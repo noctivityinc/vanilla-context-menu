@@ -264,13 +264,9 @@ class NestedGridContextMenu extends BaseContextMenu {
       adjustedX = parentX + parentWidth;
     }
 
-    // Use normalized position for Y coordinate to handle vertical overflow
-    const { normalizedY } = this.getNormalizedPosition(
-      parentX,
-      parentY,
-      contextMenu
-    );
-    const adjustedY = normalizedY;
+    // Use the parent element's Y position directly (not normalized position)
+    // to align with the specific menu item
+    const adjustedY = parentY;
 
     contextMenu.style.top = `${adjustedY}px`;
     contextMenu.style.left = `${adjustedX}px`;
